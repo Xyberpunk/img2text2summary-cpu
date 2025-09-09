@@ -1,0 +1,5 @@
+# Summarizer worker
+transformers==4.43.3
+optimum[onnxruntime]==1.26.0
+onnxruntime==1.18.1
+# torch CPU installed in Dockerfile as a fallback path

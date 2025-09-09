@@ -1,0 +1,6 @@
+# keep these exact to avoid source builds & conflicts
+numpy==1.26.4
+PyMuPDF==1.24.14
+opencv-python==0
+opencv-contrib-python==0
+opencv-python-headless==4.6.0.66

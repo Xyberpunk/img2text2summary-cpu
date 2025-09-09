@@ -1,9 +1,9 @@
-﻿{
+{
   "version": 2,
+  "cleanUrls": true,
+  "trailingSlash": false,
   "rewrites": [
     { "source": "/", "destination": "/img2text-ui/index.html" },
     { "source": "/(.*)", "destination": "/img2text-ui/$1" }
-  ],
-  "cleanUrls": true,
-  "trailingSlash": false
+  ]
 }

@@ -1,0 +1,270 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>Image → Text → Summary</title>
+    <style>
+      :root {
+        --bg: #0f172a;
+        --panel: #111827;
+        --muted: #94a3b8;
+        --fg: #e5e7eb;
+        --accent: #22d3ee;
+      }
+      body {
+        margin: 0;
+        background: var(--bg);
+        color: var(--fg);
+        font: 14px/1.45 system-ui, Segoe UI, Arial;
+      }
+      .wrap {
+        max-width: 960px;
+        margin: 32px auto;
+        padding: 0 16px;
+      }
+      h1 {
+        font-size: 20px;
+        margin: 0 0 12px;
+      }
+      .card {
+        background: var(--panel);
+        border-radius: 12px;
+        padding: 16px;
+        margin: 12px 0;
+      }
+      .row {
+        display: flex;
+        gap: 12px;
+        flex-wrap: wrap;
+        align-items: center;
+      }
+      label {
+        display: block;
+        font-weight: 600;
+        margin: 0 0 6px;
+      }
+      input[type="text"],
+      textarea,
+      select {
+        width: 100%;
+        background: #0b1220;
+        border: 1px solid #1f2937;
+        color: var(--fg);
+        border-radius: 8px;
+        padding: 10px;
+      }
+      textarea {
+        min-height: 140px;
+      }
+      button {
+        background: var(--accent);
+        color: #042c2c;
+        border: 0;
+        border-radius: 10px;
+        padding: 10px 14px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+      small {
+        color: var(--muted);
+      }
+      .sliderWrap {
+        display: flex;
+        gap: 10px;
+        align-items: center;
+      }
+      .pill {
+        background: #0b1220;
+        border: 1px solid #1f2937;
+        padding: 4px 8px;
+        border-radius: 999px;
+        color: var(--muted);
+      }
+    </style>
+  </head>
+  <body>
+    <div class="wrap">
+      <h1>Image → Text → Summary</h1>
+
+      <!-- Upload image → generate text (OCR only) -->
+      <div class="card">
+        <h2 style="margin-top: 0">Upload Image → Generate Text</h2>
+        <div class="row">
+          <input id="file" type="file" accept="image/*" />
+          <button id="ocrBtn">Generate Text</button>
+        </div>
+        <small
+          >After text is generated, it will be auto-copied into the box
+          below.</small
+        >
+        <label style="margin-top: 10px">Extracted Text</label>
+        <textarea
+          id="ocrText"
+          placeholder="Your extracted text will appear here…"
+          readonly
+        ></textarea>
+      </div>
+
+      <!-- Summarize text (with length slider) -->
+      <div class="card">
+        <h2 style="margin-top: 0">Summarize Text</h2>
+        <div class="row">
+          <div style="flex: 1; min-width: 220px">
+            <label>Format</label>
+            <select id="fmt">
+              <option value="plain">plain</option>
+              <option value="bullets">bullets</option>
+              <option value="markdown">markdown</option>
+            </select>
+          </div>
+
+          <div style="flex: 1; min-width: 260px">
+            <label>Summary length</label>
+            <div class="sliderWrap">
+              <input id="len" type="range" min="1" max="4" step="1" value="3" />
+              <span class="pill" id="lenLabel">Long</span>
+            </div>
+            <small>
+              Controls bullet count for bullets/markdown and sends length hints
+              (mn/mx) to the model. If the server falls back to extractive mode,
+              mn/mx are ignored.
+            </small>
+          </div>
+        </div>
+
+        <label>Text</label>
+        <textarea
+          id="text"
+          placeholder="Paste or use generated text from above…"
+        ></textarea>
+
+        <div class="row" style="margin-top: 8px">
+          <button id="sumBtn">Summarize</button>
+          <button id="copySum" title="Copy summary to clipboard">Copy</button>
+          <span id="copyNote" class="pill" style="display: none">Copied!</span>
+        </div>
+
+        <textarea
+          id="sumOut"
+          placeholder="Summary will appear here…"
+          readonly
+        ></textarea>
+      </div>
+    </div>
+
+    <!-- API base selection:
+         - On localhost (http) -> use local FastAPI
+         - On Vercel (https)   -> use your HTTPS tunnel
+         - You can override with ?api=https://your-api.example.com -->
+    <script>
+      const URL_API = new URLSearchParams(location.search).get("api");
+      const LOCAL_API = "http://127.0.0.1:18080";
+      const TUNNEL_API = "https://bde341d16c27.ngrok-free.app"; // <-- replace with your ngrok/cloudflared https URL
+
+      // If running on http://localhost use LOCAL_API, otherwise (https/Vercel) use TUNNEL_API
+      const API_BASE = (
+        URL_API ||
+        (location.protocol === "http:" &&
+        (location.hostname === "127.0.0.1" || location.hostname === "localhost")
+          ? LOCAL_API
+          : TUNNEL_API)
+      ).replace(/\/+$/, "");
+    </script>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+
+      // Slider presets map → label, points (for bullets), and mn/mx (HF length hints)
+      const LEN_PRESETS = {
+        1: { label: "Short", points: 3, mn: 8, mx: 60 },
+        2: { label: "Medium", points: 5, mn: 16, mx: 120 },
+        3: { label: "Long", points: 7, mn: 32, mx: 200 },
+        4: { label: "Max", points: 10, mn: 48, mx: 320 },
+      };
+
+      $("len").addEventListener("input", () => {
+        const p = LEN_PRESETS[$("len").value] || LEN_PRESETS[3];
+        $("lenLabel").textContent = p.label;
+      });
+
+      async function getJSON(url, opts) {
+        const r = await fetch(url, opts);
+        const t = await r.text();
+        let d = t;
+        try {
+          d = JSON.parse(t);
+        } catch {}
+        if (!r.ok)
+          throw new Error(typeof d === "string" ? t : JSON.stringify(d));
+        return d;
+      }
+
+      // OCR → generate text (plain)
+      $("ocrBtn").onclick = async () => {
+        const f = $("file").files[0];
+        if (!f) {
+          alert("Choose an image first.");
+          return;
+        }
+        $("ocrText").value = "Extracting…";
+        try {
+          const fd = new FormData();
+          fd.append("file", f);
+          const d = await getJSON(`${API_BASE}/infer/ocr`, {
+            method: "POST",
+            body: fd,
+          });
+          const text = d && d.text ? d.text : "";
+          $("ocrText").value = text || "(No text found)";
+          $("text").value = text; // feed summarizer input
+        } catch (e) {
+          $("ocrText").value = "Error: " + e.message;
+        }
+      };
+
+      // Summarize text
+      $("sumBtn").onclick = async () => {
+        const src = $("text").value.trim();
+        if (!src) {
+          alert("Provide some text to summarize.");
+          return;
+        }
+        $("sumOut").value = "Summarizing…";
+        try {
+          const fmt = $("fmt").value;
+          const preset = LEN_PRESETS[$("len").value] || LEN_PRESETS[3];
+
+          let url = `${API_BASE}/infer/text?fmt=${encodeURIComponent(fmt)}&mn=${
+            preset.mn
+          }&mx=${preset.mx}`;
+          if (fmt === "bullets" || fmt === "markdown")
+            url += `&points=${preset.points}`;
+
+          const body = JSON.stringify({ text: src });
+          const d = await getJSON(url, {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body,
+          });
+          $("sumOut").value = d && d.summary ? d.summary : "";
+        } catch (e) {
+          $("sumOut").value = "Error: " + e.message;
+        }
+      };
+
+      // Copy summary
+      $("copySum").onclick = async () => {
+        const txt = $("sumOut").value || "";
+        try {
+          await navigator.clipboard.writeText(txt);
+        } catch {
+          $("sumOut").select();
+          document.execCommand("copy");
+        }
+        $("copyNote").style.display = "inline-block";
+        setTimeout(() => ($("copyNote").style.display = "none"), 1200);
+      };
+    </script>
+  </body>
+</html>

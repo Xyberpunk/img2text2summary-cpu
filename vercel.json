@@ -1,0 +1,9 @@
+﻿{
+  "version": 2,
+  "rewrites": [
+    { "source": "/", "destination": "/img2text-ui/index.html" },
+    { "source": "/(.*)", "destination": "/img2text-ui/$1" }
+  ],
+  "cleanUrls": true,
+  "trailingSlash": false
+}
